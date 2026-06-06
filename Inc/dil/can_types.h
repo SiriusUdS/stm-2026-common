@@ -26,14 +26,14 @@ typedef union {
 
 // Identifie les nodes du réseau CAN
 typedef enum {
-    CAN_NODE_FILL_F412   = 0x01,
-    CAN_NODE_ENGINE_H747 = 0x02,
+    CAN_NODE_FCU = 0x01,   /* Fill Control Unit   (FillStation board) */
+    CAN_NODE_ECU = 0x02,   /* Engine Control Unit (Engine board)      */
 } CanNodeId;
 
 // Id du message
 typedef enum {
-    CAN_ID_CMD_VALVE      = 0x01,   /* FILL  → ENGINE : Change valve status   */
-    CAN_ID_STATUS_VALVE   = 0x02,   /* ENGINE → FILL  : Return valve status   */
+    CAN_ID_CMD_VALVE      = 0x01,   /* FCU → ECU : Change valve status        */
+    CAN_ID_STATUS_VALVE   = 0x02,   /* ECU → FCU : Return valve status        */
     CAN_ID_COMM_PING      = 0x7E,   /* any → node     : communication test    */
     CAN_ID_COMM_PONG      = 0x7F,   /* node → sender  : reply, echoes payload  */
 } CanMsgId;
