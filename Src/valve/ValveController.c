@@ -1,37 +1,80 @@
 #include "valve/ValveController.h"
 
-void valveInit(Valve* valve, float expectedTransitTimeMs){
-    servoInit(&(valve->servoConfig));
-    servoSetPercent(&(valve->servoConfig), 0);
+extern uint32_t HAL_GetTick(void);
 
-    valve->state = VALVE_STATE_CLOSED;
-    valve->expectedTransitTimeMs = expectedTransitTimeMs;
+#define DEBOUNCE_DELAY_MS 30
+
+void valveInit(Valve* const valve, uint32_t timeoutMs) {
+    if (valve == NULL) return; // Critical C guard: protect against null pointers
+
+    valve->state = VALVE_STATE_UNKNOWN;
+    valve->maxTransitTimeoutMs = timeoutMs;
+    valve->startTransitionMs = 0;
+    valve->lastLimitSwitchMs = 0;
+    valve->openLimitHit = false;
+    valve->closeLimitHit = false;
 }
 
-void valveOpen(Valve* valve){
-    if(valve->state == VALVE_STATE_OPEN) return;
-    if(valve->state == VALVE_STATE_UNKNOWN) return;
+void valveOpen(Valve* const valve) {
+    if (valve == NULL) return;
 
-    servoSetPercent(&(valve->servoConfig), 100);
+    if (valve->state == VALVE_STATE_OPEN || valve->state == VALVE_STATE_OPENING) {
+        return;
+    }
+    
+    valve->startTransitionMs = HAL_GetTick();
     valve->state = VALVE_STATE_OPENING;
-    valve->startTransitTimeMs = HAL_GetTick();
+    
+    servoSetPercent(&(valve->servoConfig), 100);
 }
 
-void valveClose(Valve* valve){
-    if(valve->state == VALVE_STATE_CLOSING) return;
-    if(valve->state == VALVE_STATE_UNKNOWN) return;
+void valveClose(Valve* const valve) {
+    if (valve == NULL) return;
+
+    if (valve->state == VALVE_STATE_CLOSED || valve->state == VALVE_STATE_CLOSING) {
+        return;
+    }
+
+    valve->startTransitionMs = HAL_GetTick();
+    valve->state = VALVE_STATE_CLOSING;
 
     servoSetPercent(&(valve->servoConfig), 0);
-    valve->state = VALVE_STATE_CLOSING;
-    valve->startTransitTimeMs = HAL_GetTick();
 }
 
-void valveUpdate(Valve* valve){
-    if(valve->state == VALVE_STATE_CLOSING || valve->state == VALVE_STATE_OPENING){
-        // Check si le temps est passé
-        if((HAL_GetTick() - valve->startTransitTimeMs) >= valve->expectedTransitTimeMs){
-            if(valve->state == VALVE_STATE_CLOSING) valve->state = VALVE_STATE_CLOSED;
-            else valve->state = VALVE_STATE_OPEN;
+void valveUpdate(Valve* const valve, bool rawOpenLimitPin, bool rawCloseLimitPin) {
+    if (valve == NULL) return;
+
+    uint32_t currentMs = HAL_GetTick();
+
+    // Debounce
+    if (rawOpenLimitPin != valve->openLimitHit || rawCloseLimitPin != valve->closeLimitHit) {
+        if ((currentMs - valve->lastLimitSwitchMs) >= DEBOUNCE_DELAY_MS) {
+            valve->openLimitHit = rawOpenLimitPin;
+            valve->closeLimitHit = rawCloseLimitPin;
+            valve->lastLimitSwitchMs = currentMs;
         }
+    }
+
+    switch (valve->state) {
+        case VALVE_STATE_OPENING:
+            if (valve->openLimitHit) {
+                valve->state = VALVE_STATE_OPEN;
+            } 
+            else if ((currentMs - valve->startTransitionMs) >= valve->maxTransitTimeoutMs) {
+                valve->state = VALVE_STATE_FAULT;
+            }
+            break;
+
+        case VALVE_STATE_CLOSING:
+            if (valve->closeLimitHit) {
+                valve->state = VALVE_STATE_CLOSED;
+            } 
+            else if ((currentMs - valve->startTransitionMs) >= valve->maxTransitTimeoutMs) {
+                valve->state = VALVE_STATE_FAULT;
+            }
+            break;
+
+        default:
+            break;
     }
 }
