@@ -3,60 +3,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "stm32h7xx_hal.h"   // FDCAN_HandleTypeDef and FDCAN HAL API
+#include "dil/can_types.h"   // shared, HAL-free CAN protocol types + enums
 
 /* ------------------------------------------------------------------------- */
-/* CAN extended-identifier layout (29-bit), overlaid on a 32-bit word        */
-/* ------------------------------------------------------------------------- */
-typedef struct {
-    uint32_t senderID:4;
-    uint32_t targetID:4;
-    uint32_t deviceState:4;
-    uint32_t messageID:8;
-    uint32_t errorCtrl:2;
-    uint32_t errorCode:7;
-    uint32_t reserved:3;
-}FrameCANHeader;
-
-typedef union {
-    FrameCANHeader frame;
-    uint32_t code;
-} CANHeader;
-
-// Identifie les nodes du réseau CAN
-typedef enum {
-    CAN_NODE_FILL_F412   = 0x01,
-    CAN_NODE_ENGINE_H747 = 0x02,
-} CanNodeId;
-
-// Id du message
-typedef enum {
-    CAN_ID_CMD_VALVE      = 0x01,   /* FILL  → ENGINE : Change valve status   */
-    CAN_ID_STATUS_VALVE   = 0x02,   /* ENGINE → FILL  : Return valve status   */
-    CAN_ID_COMM_PING      = 0x7E,   /* any → node     : communication test    */
-    CAN_ID_COMM_PONG      = 0x7F,   /* node → sender  : reply, echoes payload  */
-} CanMsgId;
-
-typedef enum {
-    CAN_VALVE_1 = 1,
-    CAN_VALVE_2 = 2,
-} CanValveIndex;
-
-typedef enum {
-    CAN_CMD_CLOSE = 0x00,
-    CAN_CMD_OPEN  = 0x01,
-} CanValveCmd;
-
-// Status de la valve
-typedef enum {
-    CAN_STATUS_UNKNOWN  = 0x00,
-    CAN_STATUS_OPEN     = 0x01,
-    CAN_STATUS_OPENING  = 0x02,
-    CAN_STATUS_CLOSED    = 0x03,
-    CAN_STATUS_CLOSING  = 0x04,
-} CanValveStatus;
-
-/* ------------------------------------------------------------------------- */
-/* Public API                                                                */
+/* Public API (FDCAN driver - M4 only, requires the FDCAN HAL module)        */
 /* ------------------------------------------------------------------------- */
 
 /**
