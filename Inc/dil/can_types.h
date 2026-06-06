@@ -39,8 +39,8 @@ typedef enum {
 } CanMsgId;
 
 typedef enum {
-    CAN_VALVE_1 = 1,
-    CAN_VALVE_2 = 2,
+    CAN_VALVE_1 = 0,
+    CAN_VALVE_2 = 1,
 } CanValveIndex;
 
 typedef enum {
@@ -55,4 +55,5 @@ typedef enum {
     CAN_STATUS_OPENING  = 0x02,
     CAN_STATUS_CLOSED    = 0x03,
     CAN_STATUS_CLOSING  = 0x04,
+    CAN_STATUS_FAULT = 0x05
 } CanValveStatus;
