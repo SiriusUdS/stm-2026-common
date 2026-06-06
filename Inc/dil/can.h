@@ -6,48 +6,6 @@
 #include "dil/can_types.h"   // shared, HAL-free CAN protocol types + enums
 
 /* ------------------------------------------------------------------------- */
-/* Public API (FDCAN driver - M4 only, requires the FDCAN HAL module)        */
-/* ------------------------------------------------------------------------- */
-
-typedef union {
-    FrameCANHeader frame;
-    uint32_t code;
-} CANHeader;
-
-// Identifie les nodes du réseau CAN
-typedef enum {
-    CAN_NODE_FILL = 0x01,
-    CAN_NODE_ENGINE = 0x02,
-} CanNodeId;
-
-// Id du message
-typedef enum {
-    CAN_ID_CMD_VALVE      = 0x01,   /* FILL  → ENGINE : Change valve status   */
-    CAN_ID_STATUS_VALVE   = 0x02,   /* ENGINE → FILL  : Return valve status   */
-    CAN_ID_COMM_PING      = 0x7E,   /* any → node     : communication test    */
-    CAN_ID_COMM_PONG      = 0x7F,   /* node → sender  : reply, echoes payload  */
-} CanMsgId;
-
-typedef enum {
-    CAN_VALVE_1 = 1,
-    CAN_VALVE_2 = 2,
-} CanValveIndex;
-
-typedef enum {
-    CAN_CMD_CLOSE = 0x00,
-    CAN_CMD_OPEN  = 0x01,
-} CanValveCmd;
-
-// Status de la valve
-typedef enum {
-    CAN_STATUS_UNKNOWN  = 0x00,
-    CAN_STATUS_OPEN     = 0x01,
-    CAN_STATUS_OPENING  = 0x02,
-    CAN_STATUS_CLOSED    = 0x03,
-    CAN_STATUS_CLOSING  = 0x04,
-} CanValveStatus;
-
-/* ------------------------------------------------------------------------- */
 /* Public API                                                                */
 /* ------------------------------------------------------------------------- */
 
