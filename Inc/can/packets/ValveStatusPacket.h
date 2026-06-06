@@ -1,5 +1,6 @@
 #pragma once
-#include "dil/can.h"
+#include "dil/can_types.h"   /* HAL-free CAN types (usable on the M7) */
+#include "stm32h7xx_hal.h"   /* HAL_GetTick() */
 
 typedef struct {
     uint32_t timeStamp_ms;

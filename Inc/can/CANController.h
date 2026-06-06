@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include "can/CANControllerConfig.h"
 
 typedef struct {
@@ -6,4 +7,8 @@ typedef struct {
 } CANController;
 
 void CANController_Init (CANController *ctrl, const CANControllerConfig *cfg);
-void CANController_Process(CANController *ctrl);
+
+/* Process at most one received frame. Returns true if a frame was dequeued
+   (whether or not it was dispatched), false when the RX ring is empty -- so
+   callers can drain with `while (CANController_Process(&ctrl));`. */
+bool CANController_Process(CANController *ctrl);

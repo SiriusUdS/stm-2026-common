@@ -1,17 +1,21 @@
 #include "can/CANController.h"
+#include "dil/can_bus.h"
 
 void CANController_Init(CANController *ctrl, const CANControllerConfig *cfg)
 {
     ctrl->cfg = cfg;
 }
 
-void CANController_Process(CANController *ctrl)
+bool CANController_Process(CANController *ctrl)
 {
     CANHeader header;
     uint8_t rxData[8];
 
-    if (!CAN_Receive(&header, rxData)) return;
-    if (header.frame.targetID != ctrl->cfg->nodeID) return;
+    if (!CanBus_Receive(&header, rxData)) return false;  /* ring empty */
+
+    /* Frame was dequeued; report true even if it is not ours or unhandled,
+       so the caller can keep draining the ring. */
+    if (header.frame.targetID != ctrl->cfg->nodeID) return true;
 
     const CANHandlerEntry *h = ctrl->cfg->handlers;
     for (uint8_t i = 0; i < ctrl->cfg->handlerCount; i++, h++)
@@ -19,7 +23,8 @@ void CANController_Process(CANController *ctrl)
         if (h->messageID == header.frame.messageID)
         {
             h->handler(h->ctx, &header, rxData);
-            return;
+            break;
         }
     }
+    return true;
 }
