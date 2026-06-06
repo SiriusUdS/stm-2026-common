@@ -1,0 +1,12 @@
+#include "can/handlers/handlerPing.h"
+
+void handler_ping(void *ctx, const CANHeader *header, const uint8_t *rxData)
+{
+    CanNodeId senderID = *(CanNodeId *)ctx;
+
+    CANHeader resp = {0};
+    resp.frame.senderID = senderID;
+    resp.frame.targetID = header->frame.senderID;
+    resp.frame.messageID = CAN_ID_COMM_PONG;
+    CAN_Send(resp.code, rxData);
+}
