@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <optional>
 
-#include "command/SetState.hpp"          // SetStateFrame         — SetState payload (State TBD)
-#include "command/SetValvePosition.hpp"  // SetValvePositionFrame — SetValvePosition payload
+#include "command/set_state.hpp"          // SetStateFrame         — SetState payload (State TBD)
+#include "command/set_valve_position.hpp" // SetValvePositionFrame — SetValvePosition payload
 // Synchronise carries no payload (yet), so it has no header to include.
 
 /* ------------------------------------------------------------------------- *
