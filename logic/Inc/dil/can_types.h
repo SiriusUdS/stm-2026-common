@@ -24,11 +24,11 @@ typedef union {
     uint32_t code;
 } CANHeader;
 
-// Identifie les nodes du réseau CAN
-typedef enum {
-    CAN_NODE_FCU = 0x01,   /* Fill Control Unit   (FillStation board) */
-    CAN_NODE_ECU = 0x02,   /* Engine Control Unit (Engine board)      */
-} CanNodeId;
+// Node identity uses the system-wide board ids (single source of truth) from
+// sirius-headers-common/Telecommunication/PacketHeaderVariable.h:
+//   FILLING_STATION_BOARD_ID (FCU), ENGINE_BOARD_ID (ECU), GS_CONTROL_BOARD_ID,
+//   BOARD_BROADCAST_ID. The old CAN_NODE_* enum was removed — it numbered the
+//   boards differently from the board ids, which was a cross-transport hazard.
 
 // Id du message
 typedef enum {

@@ -19,7 +19,7 @@ typedef struct {
 } ValveStatusPacket;
 
 // Build a status packet
-static inline void valveStatusPacketMake(CanNodeId sender, CanNodeId target,
+static inline void valveStatusPacketMake(uint8_t sender, uint8_t target,
                                          CanValveIndex valve, CanValveStatus status,
                                          ValveStatusPacket* packet)
 {

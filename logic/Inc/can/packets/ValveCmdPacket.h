@@ -19,7 +19,7 @@ typedef struct {
 } ValveCmdPacket;
 
 // Build a packet
-static inline void valveCmdPacketMake(CanNodeId sender, CanNodeId target,
+static inline void valveCmdPacketMake(uint8_t sender, uint8_t target,
                                       CanValveIndex valve, CanValveCmd cmd,
                                       ValveCmdPacket* packet)
 {

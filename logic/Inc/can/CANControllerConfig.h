@@ -15,7 +15,7 @@ typedef struct {
 } CANHandlerEntry;
 
 typedef struct {
-    CanNodeId nodeID;
+    uint8_t nodeID;   /* board id (PacketHeaderVariable.h) */
     const CANHandlerEntry *handlers;
     uint8_t handlerCount;
 } CANControllerConfig;

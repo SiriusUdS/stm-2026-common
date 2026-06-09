@@ -3,7 +3,7 @@
 
 void handler_ping(void *ctx, const CANHeader *header, const uint8_t *rxData)
 {
-    CanNodeId senderID = *(CanNodeId *)ctx;
+    uint8_t senderID = *(uint8_t *)ctx;
 
     CANHeader resp = {0};
     resp.frame.senderID = senderID;
