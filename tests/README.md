@@ -11,12 +11,16 @@ tests/
 ├── fetch-googletest.cmake  # downloads a pinned GoogleTest into third_party/ (git-ignored)
 ├── cmake/
 │   └── host_tests.cmake    # shared harness logic (toolchain select + configure/build/ctest)
-├── logic/                  # mirrors the source layout under logic/
-│   ├── control/persistent_state_test.cpp
-│   └── communication/protocol/command/command_test.cpp
+├── unit/                   # one unit in isolation; mirrors the source layout under logic/
+│   └── logic/
+│       ├── control/persistent_state_test.cpp
+│       └── communication/protocol/command/command_test.cpp
+├── integration/            # several units assembled — reserved, empty for now (see its README)
 └── support/
     └── fakes.hpp/.cpp      # FakeBus: test doubles for the udp::/can:: interfaces
 ```
+
+Tests are labelled `unit` / `integration`, so `ctest -L unit` selects a subset.
 
 ## Run
 
@@ -45,7 +49,8 @@ this directory to reuse these tests, the shared GoogleTest, and the exported
 ## Adding a test
 
 Mirror the source tree: for a unit at `logic/<path>/<unit>.cpp`, add
-`tests/logic/<path>/<unit>_test.cpp`, then add an `add_executable(...)` +
-`gtest_discover_tests(...)` block in `CMakeLists.txt` using
-`STMCOMMON_LOGIC_INCLUDE_DIRS`. Includes resolve via `-I`, so the test file's
-own location doesn't affect them.
+`tests/unit/logic/<path>/<unit>_test.cpp`, then add an `add_executable(...)` +
+`gtest_discover_tests(... PROPERTIES LABELS "unit")` block in `CMakeLists.txt`
+using `STMCOMMON_LOGIC_INCLUDE_DIRS`. Includes resolve via `-I`, so the test
+file's own location doesn't affect them. Submodule-level integration tests (if
+any) go under `tests/integration/` with the `"integration"` label.

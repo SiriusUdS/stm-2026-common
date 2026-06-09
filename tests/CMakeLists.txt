@@ -51,9 +51,13 @@ set(STMCOMMON_LOGIC_INCLUDE_DIRS
     ${COMMON_ROOT}/logic/communication/protocol # command/, can/, ethernet/, sirius-headers-common/
     CACHE INTERNAL "stm-2026-common logic include dirs for host tests")
 
-# --- Persistent state test ------------------------------------------------
+# Host tests are split into unit/ (one unit in isolation) and integration/
+# (several units assembled). This submodule currently has only unit tests; see
+# tests/integration/README.md. Tests are labelled so `ctest -L unit` works.
+
+# --- Persistent state test (unit) -----------------------------------------
 add_executable(persistent_state_test
-    logic/control/persistent_state_test.cpp
+    unit/logic/control/persistent_state_test.cpp
     ${COMMON_ROOT}/logic/control/persistent_state.cpp
 )
 target_include_directories(persistent_state_test PRIVATE
@@ -61,12 +65,12 @@ target_include_directories(persistent_state_test PRIVATE
     ${STMCOMMON_LOGIC_INCLUDE_DIRS}
 )
 target_link_libraries(persistent_state_test PRIVATE GTest::gtest_main)
-gtest_discover_tests(persistent_state_test)
+gtest_discover_tests(persistent_state_test PROPERTIES LABELS "unit")
 
-# --- Command parser test --------------------------------------------------
+# --- Command parser test (unit) -------------------------------------------
 set(COMMAND_DIR ${COMMON_ROOT}/logic/communication/protocol/command)
 add_executable(command_test
-    logic/communication/protocol/command/command_test.cpp
+    unit/logic/communication/protocol/command/command_test.cpp
     ${COMMAND_DIR}/parser/command_can_parser.cpp
     ${COMMAND_DIR}/parser/command_ethernet_parser.cpp
 )
@@ -75,4 +79,4 @@ target_include_directories(command_test PRIVATE
     ${STMCOMMON_LOGIC_INCLUDE_DIRS}
 )
 target_link_libraries(command_test PRIVATE GTest::gtest_main)
-gtest_discover_tests(command_test)
+gtest_discover_tests(command_test PROPERTIES LABELS "unit")
