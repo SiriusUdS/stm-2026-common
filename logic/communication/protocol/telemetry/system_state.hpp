@@ -3,7 +3,7 @@
 #include <cstdint>
 
 #include "sirius-headers-common/Telecommunication/InterfaceField.h"
-#include "communication/protocol/telemetry/valve_state.hpp"
+#include "communication/protocol/telemetry/valve_info.hpp"
 #include "communication/protocol/ethernet/ethernet_header.hpp"
 
 /* Periodic downlink telemetry: the board's full live state sent to the ground
@@ -14,7 +14,8 @@ struct SystemState {
     uint32_t       lastHandshakeTs_MS;  /**< Time of the last GS handshake. */
     InterfaceField interfaces;
     uint32_t       raw_adc_values[12];
-    ValveState     valve_states[2];
+    ValveInfo      valve_info[2];       /**< 2 x 3 bytes. */
+    uint8_t        reserved[2];         /**< Pad the 6-byte valve_info up to the struct's 4-byte alignment. */
 };
 
 // Wire layout guard: the downlink telemetry must be packed with no implicit
@@ -23,7 +24,8 @@ struct SystemState {
 static_assert(sizeof(SystemState) == 2 * sizeof(uint32_t)    // frameTs_MS + lastHandshakeTs_MS
                                    + sizeof(InterfaceField)   // interfaces
                                    + 12 * sizeof(uint32_t)    // raw_adc_values
-                                   + 2 * sizeof(ValveState),  // valve_states
+                                   + 2 * sizeof(ValveInfo)    // valve_info
+                                   + 2,                       // reserved
               "SystemState has implicit padding — add explicit reserved bytes");
 
 /* The GET_SYSTEM downlink packet on the wire: the 12-byte EthernetHeader, the

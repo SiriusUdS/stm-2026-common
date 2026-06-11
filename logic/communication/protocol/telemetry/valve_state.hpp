@@ -4,23 +4,16 @@
 
 /* Telemetry representation of a single valve's state. */
 
-/** @name Valve status flags (bitmask in ValveState::status) */
-///@{
-inline constexpr uint8_t SERVO_OPEN   = 1u << 0;
-inline constexpr uint8_t SERVO_CLOSE  = 1u << 1;
-inline constexpr uint8_t SERVO_MANUAL = 1u << 2;
-///@}
-
 /** @brief One valve's reported state. */
-struct ValveState {
-    uint8_t  status;    /**< Bitmask of SERVO_*. */
-    uint8_t  reserved;  /**< Padding; keeps @ref value 2-byte aligned. */
-    uint16_t value;     /**< Current position / setpoint. */
+enum class ValveState : uint8_t {
+    Unknown  = 0x00,  /**< not yet read or in an error state */
+    Opened   = 0x01,  /**< fully open, on the open limit switch */
+    Closed   = 0x02,  /**< fully closed, on the closed limit switch */
+    Opening  = 0x03,  /**< moving towards open, not on either switch */
+    Closing  = 0x04,  /**< moving towards closed, not on either switch */
+    Faulted  = 0x05,  /**< in an error state (e.g. limit switch disagreement) */
+    Floating = 0x06,  /**< somewhere between open and closed, not on either switch */
 };
 
 // Wire layout guard: must be packed with no implicit padding.
-static_assert(sizeof(ValveState) == 4, "ValveState must be exactly 4 bytes");
-static_assert(sizeof(ValveState) == sizeof(uint8_t)   // status
-                                  + sizeof(uint8_t)   // reserved
-                                  + sizeof(uint16_t), // value
-              "ValveState has implicit padding — add explicit reserved bytes");
+static_assert(sizeof(ValveState) == 1, "ValveState must be exactly 1 bytes");

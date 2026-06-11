@@ -67,6 +67,19 @@ target_include_directories(persistent_state_test PRIVATE
 target_link_libraries(persistent_state_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(persistent_state_test PROPERTIES LABELS "unit")
 
+# --- Valve seam test (unit) -----------------------------------------------
+# Header-only on the logic side (the Valve concept + FakeValve double), so the
+# test compiles just its own TU; the platform BallValve is firmware-only (HAL).
+add_executable(valve_test
+    unit/logic/actuation/valve_test.cpp
+)
+target_include_directories(valve_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${STMCOMMON_LOGIC_INCLUDE_DIRS}
+)
+target_link_libraries(valve_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(valve_test PROPERTIES LABELS "unit")
+
 # --- Command parser test (unit) -------------------------------------------
 set(COMMAND_DIR ${COMMON_ROOT}/logic/communication/protocol/command)
 add_executable(command_test

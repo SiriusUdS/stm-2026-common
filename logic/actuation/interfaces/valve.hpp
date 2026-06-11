@@ -1,70 +1,58 @@
 #pragma once
 
+#include <concepts>
 #include <cstdint>
 #include <optional>
 
+#include "communication/protocol/telemetry/valve_info.hpp"   // ValveInfo (the valve's own info record)
+
 /* ------------------------------------------------------------------------- *
- * Statically-linked valve interface for the logic layer.
+ * Class-based valve contract for the logic layer (C++23 concept).
  *
- * The logic layer depends ONLY on the declarations below. The platform layer
- * provides the definitions (servo PWM, limit switches, transition timeout);
- * they are resolved at link time. There is no vtable and no HAL type here, so
- * logic commands valves without knowing about servos, timers or GPIO.
+ * The logic layer depends ONLY on the @ref Valve concept below: any type with
+ * the right member functions models it, checked at compile time. There is no
+ * vtable and no HAL type here, so logic commands valves without knowing about
+ * servos, limit switches or GPIO.
+ *
+ * This replaces the previous free-function seam (open(valve_id)/close(valve_id)/
+ * ...): each valve is now an OBJECT that owns its own state machine, so a board
+ * holds one Valve instance per physical valve instead of indexing a hidden
+ * platform-side table by id. Logic components are templated on a Valve and hold
+ * a reference (or a span of references) to the instances they command. Host
+ * tests inject a FakeValve that models the same concept — no separate link.
  * ------------------------------------------------------------------------- */
 
 namespace logic::actuation {
 
 /**
- * @brief Observable state of a valve.
- */
-enum class ValveState {
-    Unknown,  /**< State not yet determined. */
-    Open,     /**< Fully open (open limit reached). */
-    Closed,   /**< Fully closed (close limit reached). */
-    Opening,  /**< Transitioning toward open. */
-    Closing,  /**< Transitioning toward closed. */
-    Fault,    /**< Transition timed out or limit switches inconsistent. */
-};
-
-/**
  * @brief Errors the valve interface can report.
  */
 enum class ValveError {
-    InternalError,  /**< Unspecified failure, or no valve with the given id. */
+    InternalError,  /**< Unspecified failure in the underlying actuator. */
 };
 
-namespace valve {
-
 /**
- * @brief  Command a valve to move to its fully-open position.
- * @param  valve_id  Identifier of the valve to actuate.
- * @return std::nullopt on success, or a ValveError describing the failure.
+ * @brief The contract a valve must satisfy to be commanded by the logic layer.
+ *
+ * A conforming type exposes:
+ *   - open()             — move to fully open;           returns nullopt or a ValveError.
+ *   - close()            — move to fully closed;         returns nullopt or a ValveError.
+ *   - setOpenPercent(p)  — move to a proportional hold;  returns nullopt or a ValveError.
+ *                          p is 0 (closed) .. 100 (open); out-of-range is clamped.
+ *   - info()             — the valve's own ValveInfo record (state + status + set
+ *                          value). The valve owns it and keeps it up to date as it
+ *                          operates; consumers just read it (no separate state()
+ *                          getter — the state lives in info()).
+ *
+ * Conformance is structural (no inheritance) and checked at the point of use,
+ * or eagerly via a static_assert next to the concrete type.
  */
-[[nodiscard]] std::optional<ValveError> open(uint8_t valve_id);
-
-/**
- * @brief  Command a valve to move to its fully-closed position.
- * @param  valve_id  Identifier of the valve to actuate.
- * @return std::nullopt on success, or a ValveError describing the failure.
- */
-[[nodiscard]] std::optional<ValveError> close(uint8_t valve_id);
-
-/**
- * @brief  Command a valve to a proportional open position.
- * @param  valve_id  Identifier of the valve to actuate.
- * @param  percent  Desired opening, 0 (fully closed) to 100 (fully open).
- *                  Values outside the range are clamped.
- * @return std::nullopt on success, or a ValveError describing the failure.
- */
-[[nodiscard]] std::optional<ValveError> setOpenPercent(uint8_t valve_id, float percent);
-
-/**
- * @brief  Read the latest known state of a valve.
- * @param  valve_id  Identifier of the valve to query.
- * @return The valve's current state, or ValveState::Unknown for an invalid id.
- */
-[[nodiscard]] ValveState state(uint8_t valve_id);
-
-} // namespace valve
+template <typename T>
+concept Valve = requires(T valve, float percent) {
+    { valve.open() }                   -> std::same_as<std::optional<ValveError>>;
+    { valve.close() }                  -> std::same_as<std::optional<ValveError>>;
+    { valve.setOpenPercent(percent) }  -> std::same_as<std::optional<ValveError>>;
+    { valve.info() }                   -> std::same_as<::ValveInfo>;
+};
 
 } // namespace logic::actuation

@@ -1,45 +1,27 @@
 /**
   ******************************************************************************
   * @file    actuation/valve/ball_valve.cpp
-  * @brief   Ball valve driver and platform-side definition of the logic valve
-  *          interface. Owns the servo, limit switches and transition/timeout
-  *          state machine for each valve.
+  * @brief   Ball valve driver: one object per physical valve, owning the servo,
+  *          limit switches and transition/timeout state machine, and modelling
+  *          the logic-side logic::actuation::Valve contract. The valve keeps its
+  *          own ValveInfo (state + status + commanded position) current; tick()
+  *          samples the switches into it and advances the state machine.
   ******************************************************************************
   */
 
 #include "actuation/valve/ball_valve.hpp"
-#include "actuation/interfaces/valve.hpp"
 
-#include <array>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 
 using logic::actuation::ValveError;
-using logic::actuation::ValveState;
 
 namespace servo = platform::actuation::servomotor;
-namespace pv    = platform::actuation::valve;
 
 namespace {
 
-constexpr std::size_t MAX_VALVE_COUNT  = 8;
-constexpr uint32_t    DEBOUNCE_DELAY_MS = 30;
-constexpr float       MIN_OPEN_PERCENT = 0.0F;
-constexpr float       MAX_OPEN_PERCENT = 100.0F;
-
-struct ValveRuntime {
-    pv::BallValveConfig config{};
-    ValveState state               = ValveState::Unknown;
-    float      open_percent        = 0.0F;   /* last commanded opening */
-    uint32_t   start_transition_ms = 0;
-    uint32_t   last_limit_switch_ms = 0;
-    bool       open_limit_hit      = false;
-    bool       close_limit_hit     = false;
-};
-
-std::array<ValveRuntime, MAX_VALVE_COUNT> s_valves{};
-std::size_t s_valve_count = 0;
+constexpr float MIN_OPEN_PERCENT = 0.0F;
+constexpr float MAX_OPEN_PERCENT = 100.0F;
 
 /* Map a desired opening percentage to a servo travel percentage.
    TODO: a ball valve's flow vs. ball rotation is non-linear; replace this
@@ -49,124 +31,124 @@ float open_percent_to_servo_percent(float open_percent)
     return open_percent;  // linear stub
 }
 
-bool read_limit(const pv::LimitSwitchConfig& limit)
+bool read_limit(const platform::actuation::valve::LimitSwitchConfig& limit)
 {
     return HAL_GPIO_ReadPin(limit.port, limit.pin) == GPIO_PIN_SET;
 }
 
 } // namespace
 
-/* -------------------------------------------------------------------------- */
-/* Platform entry points                                                      */
-/* -------------------------------------------------------------------------- */
-
 namespace platform::actuation::valve {
 
-void init(const BallValveConfig* configs, std::size_t count)
+void BallValve::init(const BallValveConfig& config)
 {
-    s_valve_count = (count > MAX_VALVE_COUNT) ? MAX_VALVE_COUNT : count;
-    for (std::size_t i = 0; i < s_valve_count; ++i) {
-        s_valves[i] = ValveRuntime{};
-        s_valves[i].config = configs[i];
-        servo::init(configs[i].servo);
-    }
+    config_                          = config;
+    info_                            = ValveInfo{};   // state Unknown, no status bits, 0 % commanded
+    info_.status.initialized         = 1u;            // bound and ready to operate
+    info_.status.opened_switch_ignored = config_.opened_switch_ignored ? 1u : 0u;
+    start_movement_ms_               = 0;
+    end_movement_ms_                 = 0;
+    servo::init(config_.servo);
 }
 
-void tick(uint32_t now_ms)
+std::optional<ValveError> BallValve::open()
 {
-    for (std::size_t i = 0; i < s_valve_count; ++i) {
-        ValveRuntime& valve = s_valves[i];
+    // With no physical open switch there is nothing to confirm an Opened state,
+    // so "open" just drives fully open and floats there (== setOpenPercent(100)).
+    if (config_.opened_switch_ignored) {
+        return setOpenPercent(MAX_OPEN_PERCENT);
+    }
+    if (info_.state == ValveState::Opened || info_.state == ValveState::Opening) {
+        return std::nullopt;
+    }
+    info_.state                = ValveState::Opening;
+    info_.current_set_value    = static_cast<uint8_t>(MAX_OPEN_PERCENT);
+    info_.status.in_transition = 1u;
+    start_movement_ms_         = HAL_GetTick();
+    servo::setPercent(config_.servo, open_percent_to_servo_percent(MAX_OPEN_PERCENT));
+    return std::nullopt;
+}
 
-        const bool raw_open  = read_limit(valve.config.open_limit);
-        const bool raw_close = read_limit(valve.config.close_limit);
+std::optional<ValveError> BallValve::close()
+{
+    if (info_.state == ValveState::Closed || info_.state == ValveState::Closing) {
+        return std::nullopt;
+    }
+    info_.state                = ValveState::Closing;
+    info_.current_set_value    = static_cast<uint8_t>(MIN_OPEN_PERCENT);
+    info_.status.in_transition = 1u;
+    start_movement_ms_         = HAL_GetTick();
+    servo::setPercent(config_.servo, open_percent_to_servo_percent(MIN_OPEN_PERCENT));
+    return std::nullopt;
+}
 
-        // Debounce limit switch transitions.
-        if (raw_open != valve.open_limit_hit || raw_close != valve.close_limit_hit) {
-            if ((now_ms - valve.last_limit_switch_ms) >= DEBOUNCE_DELAY_MS) {
-                valve.open_limit_hit  = raw_open;
-                valve.close_limit_hit = raw_close;
-                valve.last_limit_switch_ms = now_ms;
+std::optional<ValveError> BallValve::setOpenPercent(float percent)
+{
+    if (percent < MIN_OPEN_PERCENT) percent = MIN_OPEN_PERCENT;
+    if (percent > MAX_OPEN_PERCENT) percent = MAX_OPEN_PERCENT;
+
+    info_.current_set_value    = static_cast<uint8_t>(percent);
+    info_.state                = ValveState::Floating;  // proportional hold, off both limits
+    info_.status.in_transition = 0u;
+    servo::setPercent(config_.servo, open_percent_to_servo_percent(percent));
+    return std::nullopt;
+}
+
+void BallValve::tick(uint32_t now_ms)
+{
+    // The open switch is ignored on valves wired without one (its GPIO would float).
+    const bool open_hit  = config_.opened_switch_ignored ? false : read_limit(config_.open_limit);
+    const bool close_hit = read_limit(config_.close_limit);
+    info_.status.open_limit_high   = open_hit  ? 1u : 0u;
+    info_.status.closed_limit_high = close_hit ? 1u : 0u;
+
+    // Both switches asserted at once is physically impossible — a hard fault.
+    if (open_hit && close_hit) {
+        info_.status.fault_both_switches = 1u;
+        info_.status.in_transition       = 0u;
+        info_.state                      = ValveState::Faulted;
+        return;
+    }
+    info_.status.fault_both_switches = 0u;
+
+    switch (info_.state) {
+        case ValveState::Opening:
+            if (open_hit) {
+                info_.state = ValveState::Opened;
+                info_.status.in_transition = 0u;
+                end_movement_ms_ = now_ms;
+            } else if ((now_ms - start_movement_ms_) >= config_.max_transit_timeout_ms) {
+                info_.state = ValveState::Faulted;
+                info_.status.in_transition = 0u;
+                end_movement_ms_ = now_ms;
             }
-        }
-
-        switch (valve.state) {
-            case ValveState::Opening:
-                if (valve.open_limit_hit) {
-                    valve.state = ValveState::Open;
-                } else if ((now_ms - valve.start_transition_ms) >= valve.config.max_transit_timeout_ms) {
-                    valve.state = ValveState::Fault;
-                }
-                break;
-            case ValveState::Closing:
-                if (valve.close_limit_hit) {
-                    valve.state = ValveState::Closed;
-                } else if ((now_ms - valve.start_transition_ms) >= valve.config.max_transit_timeout_ms) {
-                    valve.state = ValveState::Fault;
-                }
-                break;
-            default:
-                break;
-        }
+            break;
+        case ValveState::Closing:
+            if (close_hit) {
+                info_.state = ValveState::Closed;
+                info_.status.in_transition = 0u;
+                end_movement_ms_ = now_ms;
+            } else if ((now_ms - start_movement_ms_) >= config_.max_transit_timeout_ms) {
+                info_.state = ValveState::Faulted;
+                info_.status.in_transition = 0u;
+                end_movement_ms_ = now_ms;
+            }
+            break;
+        case ValveState::Opened:
+            if (!open_hit) info_.state = ValveState::Floating;   // drifted off the open limit
+            break;
+        case ValveState::Closed:
+            if (!close_hit) info_.state = ValveState::Floating;  // drifted off the closed limit
+            break;
+        case ValveState::Floating:
+            if (open_hit)       info_.state = ValveState::Opened;
+            else if (close_hit) info_.state = ValveState::Closed;
+            break;
+        default:  // Unknown / Faulted: adopt a limit if one is now asserted
+            if (open_hit)       info_.state = ValveState::Opened;
+            else if (close_hit) info_.state = ValveState::Closed;
+            break;
     }
 }
 
 } // namespace platform::actuation::valve
-
-/* -------------------------------------------------------------------------- */
-/* Logic-side seam: definitions for actuation/interfaces/valve.hpp            */
-/* -------------------------------------------------------------------------- */
-
-namespace logic::actuation::valve {
-
-std::optional<ValveError> open(uint8_t valve_id)
-{
-    if (valve_id >= s_valve_count) return ValveError::InternalError;
-    ValveRuntime& valve = s_valves[valve_id];
-
-    if (valve.state == ValveState::Open || valve.state == ValveState::Opening) {
-        return std::nullopt;
-    }
-    valve.start_transition_ms = HAL_GetTick();
-    valve.state        = ValveState::Opening;
-    valve.open_percent = MAX_OPEN_PERCENT;
-    servo::setPercent(valve.config.servo, open_percent_to_servo_percent(MAX_OPEN_PERCENT));
-    return std::nullopt;
-}
-
-std::optional<ValveError> close(uint8_t valve_id)
-{
-    if (valve_id >= s_valve_count) return ValveError::InternalError;
-    ValveRuntime& valve = s_valves[valve_id];
-
-    if (valve.state == ValveState::Closed || valve.state == ValveState::Closing) {
-        return std::nullopt;
-    }
-    valve.start_transition_ms = HAL_GetTick();
-    valve.state        = ValveState::Closing;
-    valve.open_percent = MIN_OPEN_PERCENT;
-    servo::setPercent(valve.config.servo, open_percent_to_servo_percent(MIN_OPEN_PERCENT));
-    return std::nullopt;
-}
-
-std::optional<ValveError> setOpenPercent(uint8_t valve_id, float percent)
-{
-    if (valve_id >= s_valve_count) return ValveError::InternalError;
-    ValveRuntime& valve = s_valves[valve_id];
-
-    if (percent < MIN_OPEN_PERCENT) percent = MIN_OPEN_PERCENT;
-    if (percent > MAX_OPEN_PERCENT) percent = MAX_OPEN_PERCENT;
-
-    valve.open_percent = percent;
-    // TODO: decide how state() should reflect an intermediate hold; we likely
-    // keep open_percent alongside the state rather than forcing Opening/Closing.
-    servo::setPercent(valve.config.servo, open_percent_to_servo_percent(percent));
-    return std::nullopt;
-}
-
-ValveState state(uint8_t valve_id)
-{
-    if (valve_id >= s_valve_count) return ValveState::Unknown;
-    return s_valves[valve_id].state;
-}
-
-} // namespace logic::actuation::valve
