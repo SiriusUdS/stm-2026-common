@@ -3,19 +3,22 @@
 #include <cstdint>
 
 #include "sirius-headers-common/Telecommunication/InterfaceField.h"
+#include "communication/protocol/telemetry/adc_info.hpp"
 #include "communication/protocol/telemetry/valve_info.hpp"
+#include "communication/protocol/telemetry/storage_info.hpp"
 #include "communication/protocol/ethernet/ethernet_header.hpp"
 
 /* Periodic downlink telemetry: the board's full live state sent to the ground
- * station — timestamps, interface flags, every ADC channel and valve state. */
+ * station — timestamps, interface flags, the streaming ADC, the valves and the
+ * SD card. */
 
 struct SystemState {
     uint32_t       frameTs_MS;          /**< Time this frame was assembled. */
     uint32_t       lastHandshakeTs_MS;  /**< Time of the last GS handshake. */
     InterfaceField interfaces;
-    uint32_t       raw_adc_values[12];
+    AdcInfo        adc_info;            /**< Streaming ADC: state + status + channels. */
     ValveInfo      valve_info[2];       /**< 2 x 3 bytes. */
-    uint8_t        reserved[2];         /**< Pad the 6-byte valve_info up to the struct's 4-byte alignment. */
+    StorageInfo    storage_info;        /**< SD card: state + status (fills the former 2-byte pad). */
 };
 
 // Wire layout guard: the downlink telemetry must be packed with no implicit
@@ -23,9 +26,9 @@ struct SystemState {
 // introduces a gap, this fails — add an explicit reserved field to close it.
 static_assert(sizeof(SystemState) == 2 * sizeof(uint32_t)    // frameTs_MS + lastHandshakeTs_MS
                                    + sizeof(InterfaceField)   // interfaces
-                                   + 12 * sizeof(uint32_t)    // raw_adc_values
+                                   + sizeof(AdcInfo)          // adc_info
                                    + 2 * sizeof(ValveInfo)    // valve_info
-                                   + 2,                       // reserved
+                                   + sizeof(StorageInfo),     // storage_info
               "SystemState has implicit padding — add explicit reserved bytes");
 
 /* The GET_SYSTEM downlink packet on the wire: the 12-byte EthernetHeader, the

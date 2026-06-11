@@ -75,8 +75,9 @@ std::array<uint8_t, sizeof(T)> asBytes(const T& v)
 TEST(CommandFromCan, SetValvePositionParsed)
 {
     SetValvePositionFrame servo{};
-    servo.action = VALVE_OPEN;
-    servo.value  = 1234;
+    servo.valve  = FcuValves::Fill;
+    servo.action = ValveCommand::Open;
+    servo.value  = 42;
 
     const auto bytes = asBytes(servo);
     const CanFrame f = makeCanFrame(0x01, 0x02, wireId(CommandType::SetValvePosition), bytes);
@@ -88,8 +89,9 @@ TEST(CommandFromCan, SetValvePositionParsed)
     EXPECT_EQ(c->target, 0x02);
 
     const auto* out = reinterpret_cast<const SetValvePositionFrame*>(c->payload.data());
-    EXPECT_EQ(out->action, VALVE_OPEN);
-    EXPECT_EQ(out->value, 1234);
+    EXPECT_EQ(out->valve, FcuValves::Fill);
+    EXPECT_EQ(out->action, ValveCommand::Open);
+    EXPECT_EQ(out->value, 42);
 }
 
 TEST(CommandFromCan, PingParsedWithNoPayload)
@@ -144,8 +146,9 @@ TEST(CommandFromEthernet, SetStateParsedSourceFromHeader)
 TEST(CommandFromEthernet, SetValvePositionParsed)
 {
     SetValvePositionFrame servo{};
-    servo.action = VALVE_CLOSE;
-    servo.value  = 0xBEEF;
+    servo.valve  = FcuValves::Dump;
+    servo.action = ValveCommand::Close;
+    servo.value  = 0;
 
     const auto frame = makeEthFrame(0x03, wireId(CommandType::SetValvePosition), 1, asBytes(servo));
     const auto c = cmd::fromEthernet(frame);
@@ -153,7 +156,8 @@ TEST(CommandFromEthernet, SetValvePositionParsed)
     EXPECT_EQ(c->type, CommandType::SetValvePosition);
 
     const auto* out = reinterpret_cast<const SetValvePositionFrame*>(c->payload.data());
-    EXPECT_EQ(out->value, 0xBEEF);
+    EXPECT_EQ(out->valve, FcuValves::Dump);
+    EXPECT_EQ(out->action, ValveCommand::Close);
 }
 
 TEST(CommandFromEthernet, PingParsedNoPayload)
@@ -171,7 +175,7 @@ TEST(CommandFromEthernet, UnknownPayloadIdRejected)
 
 TEST(CommandFromEthernet, TruncatedPayloadRejected)
 {
-    // SetValvePosition needs 4 payload bytes; supply only 2.
+    // SetValvePosition needs 3 payload bytes; supply only 2.
     const std::array<uint8_t, 2> shortBody{0x01, 0x02};
     const auto frame = makeEthFrame(0x03, wireId(CommandType::SetValvePosition), 0, shortBody);
     EXPECT_FALSE(cmd::fromEthernet(frame).has_value());
@@ -188,7 +192,9 @@ TEST(CommandFromEthernet, ShortHeaderRejected)
 TEST(CommandSsot, SameWireIdParsesIdenticallyAcrossTransports)
 {
     SetValvePositionFrame servo{};
-    servo.value = 999;
+    servo.valve  = FcuValves::Fill;
+    servo.action = ValveCommand::SetOpenedPct;
+    servo.value  = 99;
     const auto bytes = asBytes(servo);
 
     // Identical wire id byte feeds both transports.
