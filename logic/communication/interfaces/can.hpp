@@ -1,17 +1,20 @@
 #pragma once
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 
+#include "communication/protocol/telemetry/can_info.hpp"   // CanInfo (the link's own info record)
+
 /* ------------------------------------------------------------------------- *
- * Statically-linked CAN interface for the logic layer.
+ * Class-based CAN contract for the logic layer (C++23 concept).
  *
- * The logic layer depends ONLY on the declarations below. The platform layer
- * provides the definitions; they are resolved at link time. There is no
- * vtable and no HAL type in this header, so logic stays unaware of FDCAN, DMA,
- * or any board-specific detail.
+ * Mirrors the valve/adc/storage/ethernet seams: the contract is a concept, the
+ * platform driver (the FDCAN DIL) models it, and a host fake models it for
+ * tests. No vtable and no HAL type appears here, so logic stays unaware of
+ * FDCAN, DMA, or any board-specific detail.
  * ------------------------------------------------------------------------- */
 
 namespace logic::communication {
@@ -35,21 +38,19 @@ struct CanFrame {
     uint8_t length{};                                      /**< Valid bytes in @ref data (0..MAX_PAYLOAD_LENGTH_BYTES). */
 };
 
-namespace can {
-
 /**
- * @brief  Queue a frame for transmission.
- * @param  frame  The frame to send.
- * @return std::nullopt on success, or a CanError describing the failure.
+ * @brief The contract a CAN interface must satisfy.
+ *
+ * A conforming type exposes:
+ *   - send(frame)   — queue a frame for transmission; nullopt on success.
+ *   - receive()     — pop the oldest received frame, or std::nullopt.
+ *   - info()        — the link's own CanInfo (state + status + drop count).
  */
-[[nodiscard]] std::optional<CanError> send(const CanFrame& frame);
-
-/**
- * @brief  Pop the oldest received frame.
- * @return The frame, or std::nullopt if none are available.
- */
-[[nodiscard]] std::optional<CanFrame> receive();
-
-} // namespace can
+template <typename T>
+concept Can = requires(T can, const CanFrame& frame) {
+    { can.send(frame) } -> std::same_as<std::optional<CanError>>;
+    { can.receive() }   -> std::same_as<std::optional<CanFrame>>;
+    { can.info() }      -> std::same_as<::CanInfo>;
+};
 
 } // namespace logic::communication

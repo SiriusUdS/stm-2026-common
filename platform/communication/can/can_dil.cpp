@@ -48,6 +48,12 @@ RxRing s_rxRing;
 /* Handle captured at init so send() can reach the peripheral. */
 FDCAN_HandleTypeDef* s_hfdcan = nullptr;
 
+/* The interface's telemetry record. The board has one CAN node, so this is
+   file-static like the ring; the Can handle exposes it through info(). The RX
+   ISR bumps rx_dropped; init() / send() update state and status from the main
+   loop. */
+CanInfo s_info{};
+
 } // namespace
 
 /* -------------------------------------------------------------------------- */
@@ -56,7 +62,7 @@ FDCAN_HandleTypeDef* s_hfdcan = nullptr;
 
 namespace platform::communication::can {
 
-std::optional<CanError> init(FDCAN_HandleTypeDef* hfdcan, uint8_t nodeId)
+std::optional<CanError> Can::init(FDCAN_HandleTypeDef* hfdcan, uint8_t nodeId)
 {
     s_hfdcan = hfdcan;
 
@@ -68,31 +74,31 @@ std::optional<CanError> init(FDCAN_HandleTypeDef* hfdcan, uint8_t nodeId)
     filter.FilterID1    = static_cast<uint32_t>(nodeId) << TARGET_ID_SHIFT_BITS;
     filter.FilterID2    = TARGET_ID_MASK;
 
+    const auto fail = [] {
+        s_info.state = CanState::Error;
+        return std::optional<CanError>{CanError::InternalError};
+    };
+
     if (HAL_FDCAN_ConfigFilter(s_hfdcan, &filter) != HAL_OK) {
-        return CanError::InternalError;
+        return fail();
     }
     if (HAL_FDCAN_ConfigGlobalFilter(s_hfdcan, FDCAN_REJECT, FDCAN_REJECT,
                                      FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE) != HAL_OK) {
-        return CanError::InternalError;
+        return fail();
     }
     if (HAL_FDCAN_Start(s_hfdcan) != HAL_OK) {
-        return CanError::InternalError;
+        return fail();
     }
     if (HAL_FDCAN_ActivateNotification(s_hfdcan, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0) != HAL_OK) {
-        return CanError::InternalError;
+        return fail();
     }
+
+    s_info.status.initialized = 1u;
+    s_info.state              = CanState::Active;
     return std::nullopt;
 }
 
-} // namespace platform::communication::can
-
-/* -------------------------------------------------------------------------- */
-/* Logic-side seam: definitions for communication/interfaces/can.hpp          */
-/* -------------------------------------------------------------------------- */
-
-namespace logic::communication::can {
-
-std::optional<CanError> send(const CanFrame& frame)
+std::optional<CanError> Can::send(const CanFrame& frame)
 {
     FDCAN_TxHeaderTypeDef txHeader{};
     txHeader.Identifier          = frame.id;
@@ -106,6 +112,7 @@ std::optional<CanError> send(const CanFrame& frame)
     txHeader.MessageMarker       = 0;
 
     if (HAL_FDCAN_GetTxFifoFreeLevel(s_hfdcan) == 0) {
+        s_info.status.tx_error = 1u;
         return CanError::InternalError;  // TX FIFO full
     }
 
@@ -113,12 +120,15 @@ std::optional<CanError> send(const CanFrame& frame)
     if (HAL_FDCAN_AddMessageToTxFifoQ(
             s_hfdcan, &txHeader,
             const_cast<uint8_t*>(frame.data.data())) != HAL_OK) {
+        s_info.status.tx_error = 1u;
         return CanError::InternalError;
     }
+
+    s_info.status.tx_error = 0u;
     return std::nullopt;
 }
 
-std::optional<CanFrame> receive()
+std::optional<CanFrame> Can::receive()
 {
     if (s_rxRing.tail == s_rxRing.head) {
         return std::nullopt;  // ring empty
@@ -135,7 +145,12 @@ std::optional<CanFrame> receive()
     return frame;
 }
 
-} // namespace logic::communication::can
+CanInfo Can::info() const
+{
+    return s_info;
+}
+
+} // namespace platform::communication::can
 
 /* -------------------------------------------------------------------------- */
 /* Interrupt service routine                                                  */
@@ -158,9 +173,13 @@ extern "C" void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef* hfdcan, uint32_t 
             s_rxRing.head = nextHead;
         }
     } else {
-        // Ring full: drain the hardware FIFO so the peripheral does not lock up.
+        // Ring full: drain the hardware FIFO so the peripheral does not lock up,
+        // and count the dropped frame (saturating) for telemetry.
         FDCAN_RxHeaderTypeDef dummyHeader{};
         std::array<uint8_t, MAX_PAYLOAD_LENGTH_BYTES> dummyData{};
         HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &dummyHeader, dummyData.data());
+        if (s_info.rx_dropped != 0xFFFFu) {
+            ++s_info.rx_dropped;
+        }
     }
 }
